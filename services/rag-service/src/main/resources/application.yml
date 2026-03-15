@@ -1,0 +1,12 @@
+server:
+  port: 8082
+
+embedding:
+  base-url: http://localhost:8090
+  model: BAAI/bge-base-zh-v1.5
+
+rag:
+  qdrant-base-url: http://localhost:6333
+  collection: kb_chunks
+  chunk-size: 800
+  chunk-overlap: 100

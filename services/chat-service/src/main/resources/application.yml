@@ -1,0 +1,24 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/ai_chat?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: root
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+llm:
+  base-url: http://localhost:8080
+  model: qwen3.5
+  temperature: 0.2
+
+rag:
+  base-url: http://localhost:8082
+
+chat:
+  history-max-messages: 12
+  rag-top-k: 4

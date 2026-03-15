@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Chat</title>
+    <style>
+      body {
+        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        margin: 0;
+        background: linear-gradient(135deg, #f6f1e8, #f2e6d5);
+        color: #1f1f1f;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        min-height: 100vh;
+      }
+      .sidebar {
+        border-right: 1px solid #d9cfc2;
+        padding: 20px;
+        background: #fdf8f1;
+      }
+      .sidebar h2 {
+        margin-top: 0;
+      }
+      .chat-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .chat-list li {
+        padding: 10px;
+        margin-bottom: 8px;
+        background: #fff;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid #e4d8c9;
+      }
+      .chat-list li.active {
+        background: #f0d7b2;
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        gap: 12px;
+      }
+      .messages {
+        flex: 1;
+        overflow-y: auto;
+        background: #fffaf3;
+        border: 1px solid #eadfce;
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .message {
+        margin-bottom: 12px;
+      }
+      .message .role {
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .input-row {
+        display: flex;
+        gap: 10px;
+      }
+      .input-row textarea {
+        flex: 1;
+        border-radius: 8px;
+        border: 1px solid #d5c8b8;
+        padding: 10px;
+        min-height: 60px;
+        resize: vertical;
+      }
+      .input-row button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 8px;
+        background: #c9824b;
+        color: #fff;
+        cursor: pointer;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+      }
+      .actions button {
+        border: 1px solid #c9824b;
+        background: transparent;
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .upload {
+        background: #fff;
+        border: 1px solid #eadfce;
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .upload input[type="text"] {
+        flex: 1;
+        border-radius: 8px;
+        border: 1px solid #d5c8b8;
+        padding: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <h2>Chats</h2>
+        <div class="actions">
+          <button id="newChatBtn">New chat</button>
+          <button id="refreshBtn">Refresh</button>
+        </div>
+        <ul class="chat-list" id="chatList"></ul>
+      </aside>
+      <main class="main">
+        <h1>AI Customer Support</h1>
+        <section class="upload">
+          <h3>Knowledge Base</h3>
+          <div class="input-row">
+            <input id="fileInput" type="file" multiple />
+            <button id="uploadBtn">Upload</button>
+          </div>
+          <div class="input-row">
+            <input id="deleteInput" type="text" placeholder="Document ID to delete" />
+            <button id="deleteBtn">Delete</button>
+          </div>
+          <div id="uploadStatus"></div>
+        </section>
+        <div class="messages" id="messages"></div>
+        <div class="input-row">
+          <textarea id="promptInput" placeholder="Ask a question..."></textarea>
+          <button id="sendBtn">Send</button>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const chatListEl = document.getElementById("chatList");
+      const messagesEl = document.getElementById("messages");
+      const promptInput = document.getElementById("promptInput");
+      const sendBtn = document.getElementById("sendBtn");
+      const newChatBtn = document.getElementById("newChatBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const fileInput = document.getElementById("fileInput");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const deleteBtn = document.getElementById("deleteBtn");
+      const deleteInput = document.getElementById("deleteInput");
+      const uploadStatus = document.getElementById("uploadStatus");
+
+      let activeChatId = null;
+
+      async function fetchChats() {
+        const res = await fetch("/api/chats");
+        return res.json();
+      }
+
+      async function createChat() {
+        const res = await fetch("/api/chats", { method: "POST" });
+        return res.json();
+      }
+
+      async function fetchMessages(chatId) {
+        const res = await fetch(`/api/chats/${chatId}/messages`);
+        return res.json();
+      }
+
+      async function sendMessage(chatId, content) {
+        const res = await fetch(`/api/chats/${chatId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        return res.json();
+      }
+
+      async function uploadFiles(files) {
+        const form = new FormData();
+        Array.from(files).forEach((file) => form.append("files", file));
+        const res = await fetch("http://localhost:8082/api/knowledge/upload", {
+          method: "POST",
+          body: form,
+        });
+        return res.json();
+      }
+
+      async function deleteDocument(docId) {
+        const res = await fetch("http://localhost:8082/api/knowledge/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentId: docId }),
+        });
+        return res.ok;
+      }
+
+      function renderChats(chats) {
+        chatListEl.innerHTML = "";
+        chats.forEach((chat) => {
+          const item = document.createElement("li");
+          item.textContent = chat.title || "Untitled";
+          if (chat.id === activeChatId) {
+            item.classList.add("active");
+          }
+          item.addEventListener("click", async () => {
+            activeChatId = chat.id;
+            renderChats(chats);
+            await loadMessages(chat.id);
+          });
+          chatListEl.appendChild(item);
+        });
+      }
+
+      function renderMessages(messages) {
+        messagesEl.innerHTML = "";
+        messages.forEach((msg) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "message";
+          const role = document.createElement("div");
+          role.className = "role";
+          role.textContent = msg.role;
+          const content = document.createElement("div");
+          content.textContent = msg.content;
+          wrapper.appendChild(role);
+          wrapper.appendChild(content);
+          messagesEl.appendChild(wrapper);
+        });
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      async function loadMessages(chatId) {
+        const messages = await fetchMessages(chatId);
+        renderMessages(messages);
+      }
+
+      async function bootstrap() {
+        let chats = await fetchChats();
+        if (chats.length === 0) {
+          const chat = await createChat();
+          chats = [chat];
+        }
+        activeChatId = chats[0].id;
+        renderChats(chats);
+        await loadMessages(activeChatId);
+      }
+
+      sendBtn.addEventListener("click", async () => {
+        const content = promptInput.value.trim();
+        if (!content || !activeChatId) {
+          return;
+        }
+        promptInput.value = "";
+        await sendMessage(activeChatId, content);
+        await loadMessages(activeChatId);
+      });
+
+      newChatBtn.addEventListener("click", async () => {
+        const chat = await createChat();
+        const chats = await fetchChats();
+        activeChatId = chat.id;
+        renderChats(chats);
+        await loadMessages(activeChatId);
+      });
+
+      refreshBtn.addEventListener("click", async () => {
+        const chats = await fetchChats();
+        renderChats(chats);
+        if (activeChatId) {
+          await loadMessages(activeChatId);
+        }
+      });
+
+      uploadBtn.addEventListener("click", async () => {
+        if (!fileInput.files.length) {
+          uploadStatus.textContent = "Please select files first.";
+          return;
+        }
+        uploadStatus.textContent = "Uploading...";
+        const ids = await uploadFiles(fileInput.files);
+        uploadStatus.textContent = `Uploaded. Document IDs: ${ids.join(", ")}`;
+        fileInput.value = "";
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        const docId = deleteInput.value.trim();
+        if (!docId) {
+          uploadStatus.textContent = "Please enter a document ID.";
+          return;
+        }
+        const ok = await deleteDocument(docId);
+        uploadStatus.textContent = ok ? "Deleted." : "Delete failed.";
+        deleteInput.value = "";
+      });
+
+      bootstrap();
+    </script>
+  </body>
+</html>
