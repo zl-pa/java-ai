@@ -5,6 +5,10 @@ import org.example.chat.config.LlmProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+/**
+ * 本地 LLM 客户端。
+ * 负责调用由 llama-server 暴露的 OpenAI 兼容 Chat Completions 接口。
+ */
 @Component
 public class LlmClient {
   private final WebClient webClient;
@@ -16,7 +20,7 @@ public class LlmClient {
   }
 
   public String chat(List<LlmMessage> messages) {
-    // LLM API base URL and model are configured in application.yml.
+    // LLM 的 base-url 与 model 通过配置文件统一管理，便于环境切换。
     LlmChatRequest request =
         new LlmChatRequest(properties.model(), messages, properties.temperature(), false);
     LlmChatResponse response =
