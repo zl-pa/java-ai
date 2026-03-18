@@ -6,6 +6,10 @@ import org.example.chat.config.RagProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+/**
+ * RAG 服务客户端。
+ * 负责向 Python/Java RAG 服务发送检索请求，返回知识片段。
+ */
 @Component
 public class RagClient {
   private final WebClient webClient;
