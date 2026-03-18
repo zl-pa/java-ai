@@ -55,12 +55,12 @@ embedding-service (Python, 8090)
    ```
 3. 确保输出包含 `21`。
 
-## 3.2 安装 Maven（或使用项目自带 mvnw）
+## 3.2 安装 Maven
 
-1. 推荐直接使用项目根目录下的 `mvnw`。
+1. 安装 Maven 3.9+。
 2. 验证：
    ```bash
-   ./mvnw -v
+   mvn -v
    ```
 
 ## 3.3 安装 Python 3.10+
@@ -119,7 +119,7 @@ uvicorn app:app --host 0.0.0.0 --port 8090
 
 在项目根目录新开终端执行：
 ```bash
-./mvnw -pl services/rag-service spring-boot:run
+mvn -pl services/rag-service spring-boot:run
 ```
 
 默认地址：`http://localhost:8082`
@@ -128,7 +128,7 @@ uvicorn app:app --host 0.0.0.0 --port 8090
 
 在项目根目录再开终端执行：
 ```bash
-./mvnw -pl services/chat-service spring-boot:run
+mvn -pl services/chat-service spring-boot:run
 ```
 
 默认地址：`http://localhost:8081`
