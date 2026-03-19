@@ -1,9 +1,13 @@
 package org.example.chat.llm;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.example.chat.config.LlmProperties;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 
 /**
  * 本地 LLM 客户端。
@@ -13,9 +17,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 public class LlmClient {
   private final WebClient webClient;
   private final LlmProperties properties;
+  private final ObjectMapper objectMapper;
 
-  public LlmClient(LlmProperties properties) {
+  public LlmClient(LlmProperties properties, ObjectMapper objectMapper) {
     this.properties = properties;
+    this.objectMapper = objectMapper;
     this.webClient = WebClient.builder().baseUrl(properties.baseUrl()).build();
   }
 
@@ -36,5 +42,37 @@ public class LlmClient {
     }
     LlmMessage message = response.choices().get(0).message();
     return message == null ? "" : message.content();
+  }
+
+  public Flux<String> chatStream(List<LlmMessage> messages) {
+    LlmChatRequest request =
+        new LlmChatRequest(properties.model(), messages, properties.temperature(), true);
+
+    return webClient
+        .post()
+        .uri("/v1/chat/completions")
+        .accept(MediaType.TEXT_EVENT_STREAM)
+        .bodyValue(request)
+        .retrieve()
+        .bodyToFlux(String.class)
+        .map(String::trim)
+        .filter(line -> !line.isEmpty())
+        .filter(line -> line.startsWith("data:"))
+        .map(line -> line.substring(5).trim())
+        .takeUntil("[DONE]"::equals)
+        .filter(payload -> !"[DONE]".equals(payload))
+        .map(this::extractContent)
+        .filter(token -> !token.isEmpty());
+  }
+
+  private String extractContent(String payload) {
+    try {
+      JsonNode root = objectMapper.readTree(payload);
+      JsonNode contentNode =
+          root.path("choices").path(0).path("delta").path("content");
+      return contentNode.isTextual() ? contentNode.asText() : "";
+    } catch (Exception ex) {
+      return "";
+    }
   }
 }
