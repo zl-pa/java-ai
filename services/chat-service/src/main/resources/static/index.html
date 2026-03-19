@@ -271,15 +271,49 @@
               await this.createNewChat();
             }
             this.sending = true;
+            const userMessage = { role: "user", content };
+            const assistantMessage = { role: "assistant", content: "" };
+            this.messages.push(userMessage, assistantMessage);
+            this.question = "";
             try {
-              await this.requestJson(`/api/chats/${this.activeChatId}/messages`, {
+              const response = await fetch(`/api/chats/${this.activeChatId}/messages/stream`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content }),
               });
-              this.question = "";
+              if (!response.ok || !response.body) {
+                const txt = await response.text();
+                throw new Error(txt || `请求失败: ${response.status}`);
+              }
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder("utf-8");
+              let buffer = "";
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split("\n\n");
+                buffer = events.pop() || "";
+                events.forEach((rawEvent) => {
+                  const lines = rawEvent.split("\n");
+                  let eventName = "message";
+                  let data = "";
+                  lines.forEach((line) => {
+                    if (line.startsWith("event:")) {
+                      eventName = line.slice(6).trim();
+                    } else if (line.startsWith("data:")) {
+                      data += line.slice(5).trim();
+                    }
+                  });
+                  if (eventName === "delta") {
+                    assistantMessage.content += data;
+                  }
+                });
+              }
               await this.loadMessages(this.activeChatId);
             } catch (e) {
+              this.messages.pop();
+              this.messages.pop();
               alert(`发送失败：${e.message}`);
             } finally {
               this.sending = false;

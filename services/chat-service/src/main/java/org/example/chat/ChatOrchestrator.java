@@ -22,6 +22,7 @@ import org.example.chat.prompt.PromptBuilder;
 import org.example.chat.rag.RagClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Flux;
 
 /**
  * Chat 领域编排器。
@@ -98,6 +99,43 @@ public class ChatOrchestrator {
       session.setTitle(suggestTitle(content));
     }
 
+    PromptContext promptContext = buildPromptContext(sessionId, content);
+
+    // 5) 调用本地 LLM。
+    String assistantReply = llmClient.chat(promptContext.messages());
+
+    // 6) 落库模型回复。
+    saveAssistantMessage(session, assistantReply);
+
+    return new ChatResponse(assistantReply, promptContext.chunks());
+  }
+
+  public Flux<String> postMessageStream(UUID sessionId, String content) {
+    ChatSession session =
+        sessionRepository
+            .findById(sessionId)
+            .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
+
+    ChatMessage userMessage = new ChatMessage();
+    userMessage.setRole(MessageRole.USER);
+    userMessage.setContent(content);
+    session.addMessage(userMessage);
+
+    if ("New Chat".equals(session.getTitle())) {
+      session.setTitle(suggestTitle(content));
+    }
+    sessionRepository.save(session);
+
+    PromptContext promptContext = buildPromptContext(sessionId, content);
+    StringBuilder assistantReplyBuilder = new StringBuilder();
+
+    return llmClient
+        .chatStream(promptContext.messages())
+        .doOnNext(assistantReplyBuilder::append)
+        .doOnComplete(() -> saveAssistantMessage(session, assistantReplyBuilder.toString()));
+  }
+
+  private PromptContext buildPromptContext(UUID sessionId, String content) {
     // 2) 加载并裁剪历史，避免上下文无限增长。
     List<ChatMessage> history = messageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
     history.sort(Comparator.comparing(ChatMessage::getCreatedAt));
@@ -115,19 +153,18 @@ public class ChatOrchestrator {
     for (ChatMessage message : trimmedHistory) {
       messages.add(new LlmMessage(toRole(message.getRole()), message.getContent()));
     }
+    return new PromptContext(messages, chunks);
+  }
 
-    // 5) 调用本地 LLM。
-    String assistantReply = llmClient.chat(messages);
-
-    // 6) 落库模型回复。
+  private void saveAssistantMessage(ChatSession session, String assistantReply) {
     ChatMessage assistantMessage = new ChatMessage();
     assistantMessage.setRole(MessageRole.ASSISTANT);
     assistantMessage.setContent(assistantReply);
     session.addMessage(assistantMessage);
     sessionRepository.save(session);
-
-    return new ChatResponse(assistantReply, chunks);
   }
+
+  private record PromptContext(List<LlmMessage> messages, List<RagChunk> chunks) {}
 
   private String toRole(MessageRole role) {
     return switch (role) {

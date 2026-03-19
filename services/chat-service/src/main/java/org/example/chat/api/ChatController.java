@@ -10,12 +10,15 @@ import org.example.aicommon.dto.ChatRequest;
 import org.example.aicommon.dto.ChatResponse;
 import org.example.chat.ChatOrchestrator;
 import org.example.chat.domain.ChatSession;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 
 @RestController
 @RequestMapping("/api/chats")
@@ -47,5 +50,14 @@ public class ChatController {
     @PostMapping("/{chatId}/messages")
     public ChatResponse postMessage(@PathVariable("chatId") UUID chatId, @Valid @RequestBody ChatRequest request) {
         return orchestrator.postMessage(chatId, request.content());
+    }
+
+    @PostMapping(value = "/{chatId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> postMessageStream(
+            @PathVariable("chatId") UUID chatId,
+            @Valid @RequestBody ChatRequest request) {
+        return orchestrator.postMessageStream(chatId, request.content())
+                .map(token -> ServerSentEvent.builder(token).event("delta").build())
+                .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").event("done").build()));
     }
 }
