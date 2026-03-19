@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.example.chat.config.LlmProperties;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -54,11 +56,10 @@ public class LlmClient {
         .accept(MediaType.TEXT_EVENT_STREAM)
         .bodyValue(request)
         .retrieve()
-        .bodyToFlux(String.class)
+        .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
+        .map(ServerSentEvent::data)
         .map(String::trim)
-        .filter(line -> !line.isEmpty())
-        .filter(line -> line.startsWith("data:"))
-        .map(line -> line.substring(5).trim())
+        .filter(payload -> !payload.isEmpty())
         .takeUntil("[DONE]"::equals)
         .filter(payload -> !"[DONE]".equals(payload))
         .map(this::extractContent)
