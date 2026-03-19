@@ -15,31 +15,52 @@ import org.example.chat.domain.ChatMessageRepository;
 import org.example.chat.domain.ChatSession;
 import org.example.chat.domain.ChatSessionRepository;
 import org.example.chat.domain.MessageRole;
+import org.example.chat.history.HistoryWindowStrategy;
 import org.example.chat.llm.LlmClient;
 import org.example.chat.llm.LlmMessage;
+import org.example.chat.prompt.PromptBuilder;
 import org.example.chat.rag.RagClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Chat 领域编排器。
+ *
+ * <p>职责：
+ * 1. 管理会话与消息持久化；
+ * 2. 调用 RAG 服务检索知识；
+ * 3. 构建 Prompt 并调用本地 LLM；
+ * 4. 返回最终回答与命中的知识片段。
+ */
 @Service
 public class ChatOrchestrator {
+  private static final Logger log = LoggerFactory.getLogger(ChatOrchestrator.class);
+
   private final ChatSessionRepository sessionRepository;
   private final ChatMessageRepository messageRepository;
   private final RagClient ragClient;
   private final LlmClient llmClient;
   private final ChatServiceProperties properties;
+  private final PromptBuilder promptBuilder;
+  private final HistoryWindowStrategy historyWindowStrategy;
 
   public ChatOrchestrator(
       ChatSessionRepository sessionRepository,
       ChatMessageRepository messageRepository,
       RagClient ragClient,
       LlmClient llmClient,
-      ChatServiceProperties properties) {
+      ChatServiceProperties properties,
+      PromptBuilder promptBuilder,
+      HistoryWindowStrategy historyWindowStrategy) {
     this.sessionRepository = sessionRepository;
     this.messageRepository = messageRepository;
     this.ragClient = ragClient;
     this.llmClient = llmClient;
     this.properties = properties;
+    this.promptBuilder = promptBuilder;
+    this.historyWindowStrategy = historyWindowStrategy;
   }
 
   public ChatSession createSession() {
@@ -70,6 +91,7 @@ public class ChatOrchestrator {
             .findById(sessionId)
             .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
 
+    // 1) 落库用户消息。
     ChatMessage userMessage = new ChatMessage();
     userMessage.setRole(MessageRole.USER);
     userMessage.setContent(content);
@@ -80,30 +102,39 @@ public class ChatOrchestrator {
       session.setTitle(suggestTitle(content));
     }
 
-    // Load history to keep multi-turn context.
-    List<ChatMessage> history =
-        messageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+    // 2) 加载并裁剪历史，避免上下文无限增长。
+    List<ChatMessage> history = messageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
     history.sort(Comparator.comparing(ChatMessage::getCreatedAt));
     List<ChatMessage> trimmedHistory =
-        history.size() > properties.historyMaxMessages()
-            ? history.subList(Math.max(history.size() - properties.historyMaxMessages(), 0), history.size())
-            : history;
+        historyWindowStrategy.trim(history, properties.historyMaxMessages());
 
-    // Retrieve local knowledge to ground the answer.
+    // 3) 检索本地知识库，作为回答依据。
     RagSearchResponse ragResponse = ragClient.search(content, properties.ragTopK());
     List<RagChunk> chunks = ragResponse.chunks();
 
-    // Build system prompt with RAG context.
-    String systemPrompt = buildSystemPrompt(chunks);
+    // 4) 构建系统提示词并组装 LLM 消息。
+    String systemPrompt = promptBuilder.buildSystemPrompt(chunks);
     List<LlmMessage> messages = new ArrayList<>();
     messages.add(new LlmMessage("system", systemPrompt));
     for (ChatMessage message : trimmedHistory) {
       messages.add(new LlmMessage(toRole(message.getRole()), message.getContent()));
     }
 
-    // Call local LLM via the configured API.
+    int historyCharLength =
+        trimmedHistory.stream().mapToInt(message -> safeLength(message.getContent())).sum();
+    int ragCharLength = chunks.stream().mapToInt(chunk -> safeLength(chunk.text())).sum();
+    log.info(
+        "Preparing llmClient.chat: messagesCount={}, systemPromptChars={}, historyChars={}, ragChunksCount={}, ragChunksChars={}",
+        messages.size(),
+        systemPrompt.length(),
+        historyCharLength,
+        chunks.size(),
+        ragCharLength);
+
+    // 5) 调用本地 LLM。
     String assistantReply = llmClient.chat(messages);
 
+    // 6) 落库模型回复。
     ChatMessage assistantMessage = new ChatMessage();
     assistantMessage.setRole(MessageRole.ASSISTANT);
     assistantMessage.setContent(assistantReply);
@@ -121,25 +152,13 @@ public class ChatOrchestrator {
     };
   }
 
-  private String buildSystemPrompt(List<RagChunk> chunks) {
-    if (chunks == null || chunks.isEmpty()) {
-      return "You are a helpful AI assistant. If you do not know the answer, say you do not know.";
-    }
-    StringBuilder builder = new StringBuilder();
-    builder.append("You are a helpful AI assistant. Use the context below when relevant.\n\n");
-    int index = 1;
-    for (RagChunk chunk : chunks) {
-      builder.append("[").append(index).append("] ");
-      if (chunk.title() != null && !chunk.title().isBlank()) {
-        builder.append(chunk.title()).append(": ");
-      }
-      builder.append(chunk.text()).append("\n");
-      index++;
-    }
-    builder.append("\nIf the context does not contain the answer, say you do not know.");
-    return builder.toString();
+  private int safeLength(String text) {
+    return text == null ? 0 : text.length();
   }
 
+  /**
+   * 根据首条问题生成会话标题。
+   */
   private String suggestTitle(String content) {
     String trimmed = content.trim();
     if (trimmed.isEmpty()) {

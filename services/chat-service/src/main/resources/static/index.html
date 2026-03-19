@@ -1,300 +1,355 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Chat</title>
+    <title>本地 AI 客服系统</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <style>
+      :root {
+        --bg: #f6f8fb;
+        --card: #ffffff;
+        --line: #dbe3ef;
+        --primary: #2f6fed;
+        --muted: #687386;
+      }
+      * { box-sizing: border-box; }
       body {
-        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
         margin: 0;
-        background: linear-gradient(135deg, #f6f1e8, #f2e6d5);
-        color: #1f1f1f;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: #1f2430;
       }
       .layout {
         display: grid;
-        grid-template-columns: 260px 1fr;
+        grid-template-columns: 280px 1fr;
         min-height: 100vh;
       }
       .sidebar {
-        border-right: 1px solid #d9cfc2;
-        padding: 20px;
-        background: #fdf8f1;
-      }
-      .sidebar h2 {
-        margin-top: 0;
-      }
-      .chat-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-      .chat-list li {
-        padding: 10px;
-        margin-bottom: 8px;
         background: #fff;
-        border-radius: 8px;
-        cursor: pointer;
-        border: 1px solid #e4d8c9;
-      }
-      .chat-list li.active {
-        background: #f0d7b2;
-      }
-      .main {
-        display: flex;
-        flex-direction: column;
-        padding: 20px;
-        gap: 12px;
-      }
-      .messages {
-        flex: 1;
-        overflow-y: auto;
-        background: #fffaf3;
-        border: 1px solid #eadfce;
-        border-radius: 12px;
+        border-right: 1px solid var(--line);
         padding: 16px;
       }
-      .message {
-        margin-bottom: 12px;
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
       }
-      .message .role {
-        font-weight: 700;
-        margin-bottom: 4px;
-      }
-      .input-row {
-        display: flex;
-        gap: 10px;
-      }
-      .input-row textarea {
-        flex: 1;
-        border-radius: 8px;
-        border: 1px solid #d5c8b8;
-        padding: 10px;
-        min-height: 60px;
-        resize: vertical;
-      }
-      .input-row button {
-        padding: 10px 16px;
-        border: none;
-        border-radius: 8px;
-        background: #c9824b;
-        color: #fff;
-        cursor: pointer;
-      }
-      .actions {
-        display: flex;
-        gap: 10px;
-      }
-      .actions button {
-        border: 1px solid #c9824b;
-        background: transparent;
-        padding: 6px 10px;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      .upload {
+      .title { margin: 0 0 12px; font-size: 18px; }
+      .btn {
+        border: 1px solid var(--line);
         background: #fff;
-        border: 1px solid #eadfce;
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: #fff;
+        border-color: var(--primary);
+      }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .row { display: flex; gap: 8px; }
+      .col { display: flex; flex-direction: column; gap: 10px; }
+      .chat-list { list-style: none; margin: 0; padding: 0; }
+      .chat-item {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        margin-top: 8px;
+        cursor: pointer;
+      }
+      .chat-item.active {
+        border-color: var(--primary);
+        background: #eef4ff;
+      }
+      .main {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .tabs { display: flex; gap: 8px; }
+      .tab {
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+        background: #fff;
+      }
+      .tab.active {
+        border-color: var(--primary);
+        color: var(--primary);
+        font-weight: 600;
+      }
+      .messages {
+        min-height: 420px;
+        max-height: 58vh;
+        overflow-y: auto;
+        border: 1px solid var(--line);
         border-radius: 12px;
         padding: 12px;
+        background: #fff;
       }
-      .upload input[type="text"] {
-        flex: 1;
+      .msg { margin-bottom: 14px; }
+      .msg .role { font-weight: 700; margin-bottom: 4px; }
+      .msg .text { white-space: pre-wrap; line-height: 1.6; }
+      .msg.user .role { color: #2458bb; }
+      .msg.assistant .role { color: #1f8f4f; }
+      textarea, input[type="text"] {
+        width: 100%;
+        border: 1px solid var(--line);
         border-radius: 8px;
-        border: 1px solid #d5c8b8;
-        padding: 8px;
+        padding: 10px;
+        font-size: 14px;
+      }
+      textarea { min-height: 90px; resize: vertical; }
+      .muted { color: var(--muted); font-size: 13px; }
+      .kb-list {
+        margin: 10px 0 0;
+        padding-left: 16px;
+      }
+      code {
+        background: #f1f4fa;
+        border: 1px solid var(--line);
+        padding: 2px 6px;
+        border-radius: 6px;
       }
     </style>
   </head>
   <body>
-    <div class="layout">
-      <aside class="sidebar">
-        <h2>Chats</h2>
-        <div class="actions">
-          <button id="newChatBtn">New chat</button>
-          <button id="refreshBtn">Refresh</button>
+    <div id="app" class="layout">
+      <aside class="sidebar col">
+        <div class="panel">
+          <h2 class="title">会话管理</h2>
+          <div class="row">
+            <button class="btn primary" @click="createNewChat">新建会话</button>
+            <button class="btn" @click="loadChats">刷新</button>
+          </div>
+          <ul class="chat-list">
+            <li
+              v-for="chat in chats"
+              :key="chat.id"
+              class="chat-item"
+              :class="{ active: chat.id === activeChatId }"
+              @click="switchChat(chat.id)"
+            >
+              {{ chat.title || '未命名会话' }}
+            </li>
+          </ul>
         </div>
-        <ul class="chat-list" id="chatList"></ul>
       </aside>
+
       <main class="main">
-        <h1>AI Customer Support</h1>
-        <section class="upload">
-          <h3>Knowledge Base</h3>
-          <div class="input-row">
-            <input id="fileInput" type="file" multiple />
-            <button id="uploadBtn">Upload</button>
+        <div class="panel">
+          <h1 class="title">本地 AI 客服问答系统</h1>
+          <div class="tabs">
+            <button class="tab" :class="{active: activeTab==='chat'}" @click="activeTab='chat'">
+              智能客服问答
+            </button>
+            <button class="tab" :class="{active: activeTab==='kb'}" @click="activeTab='kb'">
+              知识库管理
+            </button>
           </div>
-          <div class="input-row">
-            <input id="deleteInput" type="text" placeholder="Document ID to delete" />
-            <button id="deleteBtn">Delete</button>
-          </div>
-          <div id="uploadStatus"></div>
-        </section>
-        <div class="messages" id="messages"></div>
-        <div class="input-row">
-          <textarea id="promptInput" placeholder="Ask a question..."></textarea>
-          <button id="sendBtn">Send</button>
         </div>
+
+        <section v-if="activeTab==='chat'" class="panel col">
+          <div class="messages">
+            <div v-if="messages.length === 0" class="muted">当前会话暂无消息，先提个问题试试。</div>
+            <div v-for="(msg, idx) in messages" :key="idx" class="msg" :class="msg.role">
+              <div class="role">{{ roleLabel(msg.role) }}</div>
+              <div class="text">{{ msg.content }}</div>
+            </div>
+          </div>
+          <div class="col">
+            <textarea v-model="question" placeholder="请输入你的问题，例如：会员退款流程是什么？"></textarea>
+            <div class="row">
+              <button class="btn primary" :disabled="sending" @click="sendQuestion">
+                {{ sending ? '发送中...' : '发送问题' }}
+              </button>
+              <span class="muted">当前会话ID：<code>{{ activeChatId || '未创建' }}</code></span>
+            </div>
+          </div>
+        </section>
+
+        <section v-else class="panel col">
+          <h3 style="margin:0">文档上传</h3>
+          <div class="row">
+            <input type="file" multiple @change="onFileChange" />
+            <button class="btn primary" :disabled="uploading" @click="uploadKnowledge">
+              {{ uploading ? '上传中...' : '上传到知识库' }}
+            </button>
+          </div>
+          <div class="muted">支持多文件上传，接口：<code>/api/knowledge/upload</code></div>
+
+          <h3 style="margin:8px 0 0">按文档 ID 删除</h3>
+          <div class="row">
+            <input type="text" v-model="deleteDocId" placeholder="请输入文档ID" />
+            <button class="btn" @click="deleteKnowledge">删除文档</button>
+          </div>
+
+          <h3 style="margin:8px 0 0">知识检索测试</h3>
+          <div class="row">
+            <input type="text" v-model="searchQuery" placeholder="输入问题进行检索测试" />
+            <button class="btn" @click="searchKnowledge">检索</button>
+          </div>
+          <ul class="kb-list">
+            <li v-for="item in kbSearchResults" :key="item.id">
+              <strong>{{ item.title || '无标题' }}</strong>（score={{ (item.score || 0).toFixed(4) }}）
+              <div class="muted">{{ item.text }}</div>
+            </li>
+          </ul>
+
+          <div class="muted" v-if="kbMessage">{{ kbMessage }}</div>
+        </section>
       </main>
     </div>
 
     <script>
-      const chatListEl = document.getElementById("chatList");
-      const messagesEl = document.getElementById("messages");
-      const promptInput = document.getElementById("promptInput");
-      const sendBtn = document.getElementById("sendBtn");
-      const newChatBtn = document.getElementById("newChatBtn");
-      const refreshBtn = document.getElementById("refreshBtn");
-      const fileInput = document.getElementById("fileInput");
-      const uploadBtn = document.getElementById("uploadBtn");
-      const deleteBtn = document.getElementById("deleteBtn");
-      const deleteInput = document.getElementById("deleteInput");
-      const uploadStatus = document.getElementById("uploadStatus");
+      const { createApp } = Vue;
 
-      let activeChatId = null;
-
-      async function fetchChats() {
-        const res = await fetch("/api/chats");
-        return res.json();
-      }
-
-      async function createChat() {
-        const res = await fetch("/api/chats", { method: "POST" });
-        return res.json();
-      }
-
-      async function fetchMessages(chatId) {
-        const res = await fetch(`/api/chats/${chatId}/messages`);
-        return res.json();
-      }
-
-      async function sendMessage(chatId, content) {
-        const res = await fetch(`/api/chats/${chatId}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
-        });
-        return res.json();
-      }
-
-      async function uploadFiles(files) {
-        const form = new FormData();
-        Array.from(files).forEach((file) => form.append("files", file));
-        const res = await fetch("http://localhost:8082/api/knowledge/upload", {
-          method: "POST",
-          body: form,
-        });
-        return res.json();
-      }
-
-      async function deleteDocument(docId) {
-        const res = await fetch("http://localhost:8082/api/knowledge/delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ documentId: docId }),
-        });
-        return res.ok;
-      }
-
-      function renderChats(chats) {
-        chatListEl.innerHTML = "";
-        chats.forEach((chat) => {
-          const item = document.createElement("li");
-          item.textContent = chat.title || "Untitled";
-          if (chat.id === activeChatId) {
-            item.classList.add("active");
+      createApp({
+        data() {
+          return {
+            activeTab: "chat",
+            chats: [],
+            activeChatId: null,
+            messages: [],
+            question: "",
+            sending: false,
+            selectedFiles: [],
+            uploading: false,
+            deleteDocId: "",
+            searchQuery: "",
+            kbSearchResults: [],
+            kbMessage: "",
+          };
+        },
+        methods: {
+          roleLabel(role) {
+            if (role === "assistant") return "客服助手";
+            if (role === "user") return "用户";
+            return role;
+          },
+          async requestJson(url, options = {}) {
+            const resp = await fetch(url, options);
+            if (!resp.ok) {
+              const txt = await resp.text();
+              throw new Error(txt || `请求失败: ${resp.status}`);
+            }
+            const contentType = resp.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+              return resp.json();
+            }
+            return null;
+          },
+          async loadChats() {
+            this.chats = await this.requestJson("/api/chats");
+            if (!this.activeChatId && this.chats.length > 0) {
+              this.activeChatId = this.chats[0].id;
+              await this.loadMessages(this.activeChatId);
+            }
+          },
+          async createNewChat() {
+            const chat = await this.requestJson("/api/chats", { method: "POST" });
+            this.chats.unshift(chat);
+            this.activeChatId = chat.id;
+            this.messages = [];
+          },
+          async switchChat(chatId) {
+            this.activeChatId = chatId;
+            await this.loadMessages(chatId);
+          },
+          async loadMessages(chatId) {
+            this.messages = await this.requestJson(`/api/chats/${chatId}/messages`);
+          },
+          async sendQuestion() {
+            const content = this.question.trim();
+            if (!content) return;
+            if (!this.activeChatId) {
+              await this.createNewChat();
+            }
+            this.sending = true;
+            try {
+              await this.requestJson(`/api/chats/${this.activeChatId}/messages`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content }),
+              });
+              this.question = "";
+              await this.loadMessages(this.activeChatId);
+            } catch (e) {
+              alert(`发送失败：${e.message}`);
+            } finally {
+              this.sending = false;
+            }
+          },
+          onFileChange(event) {
+            this.selectedFiles = Array.from(event.target.files || []);
+          },
+          async uploadKnowledge() {
+            if (this.selectedFiles.length === 0) {
+              this.kbMessage = "请先选择文件。";
+              return;
+            }
+            this.uploading = true;
+            this.kbMessage = "";
+            try {
+              const form = new FormData();
+              this.selectedFiles.forEach((f) => form.append("files", f));
+              const ids = await this.requestJson("http://localhost:8082/api/knowledge/upload", {
+                method: "POST",
+                body: form,
+              });
+              this.kbMessage = `上传成功，文档ID：${(ids || []).join(", ")}`;
+            } catch (e) {
+              this.kbMessage = `上传失败：${e.message}`;
+            } finally {
+              this.uploading = false;
+            }
+          },
+          async deleteKnowledge() {
+            if (!this.deleteDocId.trim()) {
+              this.kbMessage = "请输入要删除的文档ID。";
+              return;
+            }
+            try {
+              await this.requestJson("http://localhost:8082/api/knowledge/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ documentId: this.deleteDocId.trim() }),
+              });
+              this.kbMessage = "删除成功。";
+            } catch (e) {
+              this.kbMessage = `删除失败：${e.message}`;
+            }
+          },
+          async searchKnowledge() {
+            if (!this.searchQuery.trim()) {
+              this.kbMessage = "请输入检索问题。";
+              return;
+            }
+            try {
+              const result = await this.requestJson("http://localhost:8082/api/knowledge/search", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: this.searchQuery.trim(), topK: 5 }),
+              });
+              this.kbSearchResults = (result && result.chunks) || [];
+              this.kbMessage = `检索完成，共 ${this.kbSearchResults.length} 条结果。`;
+            } catch (e) {
+              this.kbMessage = `检索失败：${e.message}`;
+            }
+          },
+        },
+        async mounted() {
+          await this.loadChats();
+          if (!this.activeChatId) {
+            await this.createNewChat();
           }
-          item.addEventListener("click", async () => {
-            activeChatId = chat.id;
-            renderChats(chats);
-            await loadMessages(chat.id);
-          });
-          chatListEl.appendChild(item);
-        });
-      }
-
-      function renderMessages(messages) {
-        messagesEl.innerHTML = "";
-        messages.forEach((msg) => {
-          const wrapper = document.createElement("div");
-          wrapper.className = "message";
-          const role = document.createElement("div");
-          role.className = "role";
-          role.textContent = msg.role;
-          const content = document.createElement("div");
-          content.textContent = msg.content;
-          wrapper.appendChild(role);
-          wrapper.appendChild(content);
-          messagesEl.appendChild(wrapper);
-        });
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-
-      async function loadMessages(chatId) {
-        const messages = await fetchMessages(chatId);
-        renderMessages(messages);
-      }
-
-      async function bootstrap() {
-        let chats = await fetchChats();
-        if (chats.length === 0) {
-          const chat = await createChat();
-          chats = [chat];
-        }
-        activeChatId = chats[0].id;
-        renderChats(chats);
-        await loadMessages(activeChatId);
-      }
-
-      sendBtn.addEventListener("click", async () => {
-        const content = promptInput.value.trim();
-        if (!content || !activeChatId) {
-          return;
-        }
-        promptInput.value = "";
-        await sendMessage(activeChatId, content);
-        await loadMessages(activeChatId);
-      });
-
-      newChatBtn.addEventListener("click", async () => {
-        const chat = await createChat();
-        const chats = await fetchChats();
-        activeChatId = chat.id;
-        renderChats(chats);
-        await loadMessages(activeChatId);
-      });
-
-      refreshBtn.addEventListener("click", async () => {
-        const chats = await fetchChats();
-        renderChats(chats);
-        if (activeChatId) {
-          await loadMessages(activeChatId);
-        }
-      });
-
-      uploadBtn.addEventListener("click", async () => {
-        if (!fileInput.files.length) {
-          uploadStatus.textContent = "Please select files first.";
-          return;
-        }
-        uploadStatus.textContent = "Uploading...";
-        const ids = await uploadFiles(fileInput.files);
-        uploadStatus.textContent = `Uploaded. Document IDs: ${ids.join(", ")}`;
-        fileInput.value = "";
-      });
-
-      deleteBtn.addEventListener("click", async () => {
-        const docId = deleteInput.value.trim();
-        if (!docId) {
-          uploadStatus.textContent = "Please enter a document ID.";
-          return;
-        }
-        const ok = await deleteDocument(docId);
-        uploadStatus.textContent = ok ? "Deleted." : "Delete failed.";
-        deleteInput.value = "";
-      });
-
-      bootstrap();
+        },
+      }).mount("#app");
     </script>
   </body>
 </html>
