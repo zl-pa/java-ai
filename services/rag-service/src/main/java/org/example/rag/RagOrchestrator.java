@@ -31,6 +31,9 @@ public class RagOrchestrator {
   // Build embeddings for each chunk and store them in the vector DB.
   public void ingest(RagIngestRequest request) {
     List<QdrantClient.QdrantPoint> points = new ArrayList<>();
+    Integer embeddingSize = null;
+    boolean collectionEnsured = false;
+
     for (RagDocument doc : request.documents()) {
       List<String> chunks = chunker.chunk(doc.content());
       for (int i = 0; i < chunks.size(); i++) {
@@ -39,12 +42,32 @@ public class RagOrchestrator {
         if (embedding.isEmpty()) {
           continue;
         }
-        qdrantClient.ensureCollection(embedding.size());
+
+        if (embeddingSize == null) {
+          embeddingSize = embedding.size();
+        } else if (embeddingSize != embedding.size()) {
+          throw new IllegalStateException(
+              "Embedding dimension changed within the same ingest request: expected="
+                  + embeddingSize
+                  + ", actual="
+                  + embedding.size()
+                  + ", docId="
+                  + doc.id()
+                  + ", chunkIndex="
+                  + i);
+        }
+
+        if (!collectionEnsured) {
+          qdrantClient.ensureCollection(embeddingSize);
+          collectionEnsured = true;
+        }
+
         String pointId = java.util.UUID.randomUUID().toString();
         Map<String, Object> payload = new HashMap<>();
         payload.put("doc_id", doc.id());
         payload.put("title", doc.title());
         payload.put("chunk_index", i);
+        payload.put("chunk_chars", chunkText.length());
         payload.put("text", chunkText);
         if (doc.metadata() != null) {
           payload.put("metadata", doc.metadata());
