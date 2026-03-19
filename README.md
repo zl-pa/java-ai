@@ -88,6 +88,9 @@ embedding-service (Python, 8090)
 
 > `chat-service` 默认模型名是 `qwen3.5`，可在配置中修改为你实际加载的模型名。
 
+```bash
+llama-server.exe -m ../aiModels/Qwen3.5-4B.Q4_K_M.gguf -ngl 50 -c 8192
+```
 ---
 
 ## 4. 启动顺序（建议严格按顺序）
@@ -111,6 +114,15 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8090
+```
+
+```bash
+docker build -t embedding-service .
+
+docker run -d \
+  -p 8090:8090 \
+  --name embedding-service \
+  embedding-service
 ```
 
 默认服务地址：`http://localhost:8090`

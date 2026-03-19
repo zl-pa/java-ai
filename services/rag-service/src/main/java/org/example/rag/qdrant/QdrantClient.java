@@ -41,13 +41,24 @@ public class QdrantClient {
 
   public void upsert(List<QdrantPoint> points) {
     UpsertRequest request = new UpsertRequest(points);
-    webClient
-        .put()
-        .uri("/collections/{name}/points", properties.collection())
-        .bodyValue(request)
-        .retrieve()
-        .toBodilessEntity()
-        .block();
+      try {
+          webClient
+                  .put()
+                  .uri("/collections/{name}/points", properties.collection())
+                  .bodyValue(request)
+                  .retrieve()
+                  .toBodilessEntity()
+                  .block();
+      } catch (WebClientResponseException e) {
+          // 【关键】这里会打印出 Qdrant 到底报了什么错
+          System.err.println("==========================================");
+          System.err.println("❌ Qdrant 400 Bad Request 详细信息:");
+          System.err.println("响应内容 (Response Body): " + e.getResponseBodyAsString());
+          System.err.println("==========================================");
+
+          // 抛出异常中断程序，让你能看到上面的日志
+          throw new RuntimeException("Qdrant 插入失败: " + e.getResponseBodyAsString(), e);
+      }
   }
 
   public List<ScoredPoint> search(List<Double> vector, int limit) {

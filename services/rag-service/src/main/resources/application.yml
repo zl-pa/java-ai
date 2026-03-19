@@ -8,5 +8,5 @@ embedding:
 rag:
   qdrant-base-url: http://localhost:6333
   collection: kb_chunks
-  chunk-size: 800
+  chunk-size: 768
   chunk-overlap: 100
