@@ -292,19 +292,20 @@
                 const { value, done } = await reader.read();
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
-                const events = buffer.split("\n\n");
+                const events = buffer.split(/\r?\n\r?\n/);
                 buffer = events.pop() || "";
                 events.forEach((rawEvent) => {
-                  const lines = rawEvent.split("\n");
+                  const lines = rawEvent.split(/\r?\n/);
                   let eventName = "message";
-                  let data = "";
+                  const dataLines = [];
                   lines.forEach((line) => {
                     if (line.startsWith("event:")) {
                       eventName = line.slice(6).trim();
                     } else if (line.startsWith("data:")) {
-                      data += line.slice(5).trim();
+                      dataLines.push(line.slice(5).trim());
                     }
                   });
+                  const data = dataLines.join("\n");
                   if (eventName === "delta") {
                     assistantMessage.content += data;
                   }
