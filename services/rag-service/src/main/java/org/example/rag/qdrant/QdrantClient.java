@@ -1,5 +1,6 @@
 package org.example.rag.qdrant;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import org.example.rag.config.RagProperties;
@@ -20,7 +21,14 @@ public class QdrantClient {
 
   public void ensureCollection(int vectorSize) {
     try {
-      webClient.get().uri("/collections/{name}", properties.collection()).retrieve().toBodilessEntity().block();
+      JsonNode response =
+          webClient
+              .get()
+              .uri("/collections/{name}", properties.collection())
+              .retrieve()
+              .bodyToMono(JsonNode.class)
+              .block();
+      validateVectorSize(response, vectorSize);
       return;
     } catch (WebClientResponseException ex) {
       if (ex.getStatusCode() != HttpStatus.NOT_FOUND) {
@@ -37,6 +45,31 @@ public class QdrantClient {
         .retrieve()
         .toBodilessEntity()
         .block();
+  }
+
+  private void validateVectorSize(JsonNode response, int expectedVectorSize) {
+    if (response == null) {
+      return;
+    }
+    JsonNode vectors = response.path("result").path("config").path("params").path("vectors");
+    if (vectors.isMissingNode() || vectors.isNull()) {
+      return;
+    }
+
+    JsonNode sizeNode = vectors.path("size");
+    if (sizeNode.isInt()) {
+      int actualSize = sizeNode.asInt();
+      if (actualSize != expectedVectorSize) {
+        throw new IllegalStateException(
+            "Qdrant collection vector size mismatch for '"
+                + properties.collection()
+                + "': expected="
+                + expectedVectorSize
+                + ", actual="
+                + actualSize
+                + ". Please migrate to a new collection for the new embedding model.");
+      }
+    }
   }
 
   public void upsert(List<QdrantPoint> points) {
