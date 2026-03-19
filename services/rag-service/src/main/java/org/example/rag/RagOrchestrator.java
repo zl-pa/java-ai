@@ -40,10 +40,11 @@ public class RagOrchestrator {
           continue;
         }
         qdrantClient.ensureCollection(embedding.size());
-        String pointId = doc.id() + "-" + i;
+        String pointId = java.util.UUID.randomUUID().toString();
         Map<String, Object> payload = new HashMap<>();
         payload.put("doc_id", doc.id());
         payload.put("title", doc.title());
+        payload.put("chunk_index", i);
         payload.put("text", chunkText);
         if (doc.metadata() != null) {
           payload.put("metadata", doc.metadata());
