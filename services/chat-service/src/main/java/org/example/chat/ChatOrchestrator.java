@@ -20,6 +20,8 @@ import org.example.chat.llm.LlmClient;
 import org.example.chat.llm.LlmMessage;
 import org.example.chat.prompt.PromptBuilder;
 import org.example.chat.rag.RagClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -35,6 +37,8 @@ import reactor.core.publisher.Flux;
  */
 @Service
 public class ChatOrchestrator {
+  private static final Logger log = LoggerFactory.getLogger(ChatOrchestrator.class);
+
   private final ChatSessionRepository sessionRepository;
   private final ChatMessageRepository messageRepository;
   private final RagClient ragClient;
@@ -153,6 +157,17 @@ public class ChatOrchestrator {
     for (ChatMessage message : trimmedHistory) {
       messages.add(new LlmMessage(toRole(message.getRole()), message.getContent()));
     }
+      int historyCharLength =
+              trimmedHistory.stream().mapToInt(message -> safeLength(message.getContent())).sum();
+      int ragCharLength = chunks.stream().mapToInt(chunk -> safeLength(chunk.text())).sum();
+      log.info(
+              "Preparing llmClient.chat: messagesCount={}, systemPromptChars={}, historyChars={}, ragChunksCount={}, ragChunksChars={}",
+              messages.size(),
+              systemPrompt.length(),
+              historyCharLength,
+              chunks.size(),
+              ragCharLength);
+
     return new PromptContext(messages, chunks);
   }
 
@@ -172,6 +187,10 @@ public class ChatOrchestrator {
       case USER -> "user";
       case ASSISTANT -> "assistant";
     };
+  }
+
+  private int safeLength(String text) {
+    return text == null ? 0 : text.length();
   }
 
   /**
