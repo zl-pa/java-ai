@@ -87,20 +87,18 @@ public class ChatOrchestrator {
 
   @Transactional
   public ChatResponse postMessage(UUID sessionId, String content) {
-    ChatSession session =
-        sessionRepository
-            .findById(sessionId)
-            .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
+    ChatSession session = getSession(sessionId);
 
     // 1) 落库用户消息。
     ChatMessage userMessage = new ChatMessage();
     userMessage.setRole(MessageRole.USER);
     userMessage.setContent(content);
-    session.addMessage(userMessage);
-    sessionRepository.save(session);
+    userMessage.setSession(session);
+    messageRepository.save(userMessage);
 
     if ("New Chat".equals(session.getTitle())) {
       session.setTitle(suggestTitle(content));
+      sessionRepository.save(session);
     }
 
     PromptContext promptContext = buildPromptContext(sessionId, content);
@@ -115,20 +113,18 @@ public class ChatOrchestrator {
   }
 
   public Flux<String> postMessageStream(UUID sessionId, String content) {
-    ChatSession session =
-        sessionRepository
-            .findById(sessionId)
-            .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
+    ChatSession session = getSession(sessionId);
 
     ChatMessage userMessage = new ChatMessage();
     userMessage.setRole(MessageRole.USER);
     userMessage.setContent(content);
-    session.addMessage(userMessage);
+    userMessage.setSession(session);
+    messageRepository.save(userMessage);
 
     if ("New Chat".equals(session.getTitle())) {
       session.setTitle(suggestTitle(content));
+      sessionRepository.save(session);
     }
-    sessionRepository.save(session);
 
     PromptContext promptContext = buildPromptContext(sessionId, content);
     StringBuilder assistantReplyBuilder = new StringBuilder();
@@ -175,8 +171,14 @@ public class ChatOrchestrator {
     ChatMessage assistantMessage = new ChatMessage();
     assistantMessage.setRole(MessageRole.ASSISTANT);
     assistantMessage.setContent(assistantReply);
-    session.addMessage(assistantMessage);
-    sessionRepository.save(session);
+    assistantMessage.setSession(session);
+    messageRepository.save(assistantMessage);
+  }
+
+  private ChatSession getSession(UUID sessionId) {
+    return sessionRepository
+        .findById(sessionId)
+        .orElseThrow(() -> new IllegalArgumentException("Chat session not found"));
   }
 
   private record PromptContext(List<LlmMessage> messages, List<RagChunk> chunks) {}
