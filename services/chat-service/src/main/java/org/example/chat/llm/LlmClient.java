@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.example.chat.config.LlmProperties;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 
@@ -24,7 +26,11 @@ public class LlmClient {
   public LlmClient(LlmProperties properties, ObjectMapper objectMapper) {
     this.properties = properties;
     this.objectMapper = objectMapper;
-    this.webClient = WebClient.builder().baseUrl(properties.baseUrl()).build();
+    WebClient.Builder builder = WebClient.builder().baseUrl(properties.baseUrl());
+    if (StringUtils.hasText(properties.apiKey())) {
+      builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey().trim());
+    }
+    this.webClient = builder.build();
   }
 
   public String chat(List<LlmMessage> messages) {
@@ -34,7 +40,7 @@ public class LlmClient {
     LlmChatResponse response =
         webClient
             .post()
-            .uri("/v1/chat/completions")
+            .uri(properties.resolvedChatPath())
             .bodyValue(request)
             .retrieve()
             .bodyToMono(LlmChatResponse.class)
@@ -52,7 +58,7 @@ public class LlmClient {
 
     return webClient
         .post()
-        .uri("/v1/chat/completions")
+        .uri(properties.resolvedChatPath())
         .accept(MediaType.TEXT_EVENT_STREAM)
         .bodyValue(request)
         .retrieve()

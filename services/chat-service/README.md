@@ -48,10 +48,31 @@
 
 重点配置：
 - `llm.base-url`：本地 LLM 地址
+- `llm.chat-path`：Chat Completions 路径（默认 `/v1/chat/completions`）
+- `llm.api-key`：云端模型 API Key（推荐用环境变量 `LLM_API_KEY` 注入）
 - `llm.model`：模型名
 - `rag.base-url`：RAG 服务地址
 - `chat.history-max-messages`：历史窗口大小
 - `chat.rag-top-k`：RAG 召回数
+
+### 切换到云端大模型（OpenAI 兼容接口）
+
+示例：
+
+```yaml
+llm:
+  base-url: https://api.openai.com
+  chat-path: /v1/chat/completions
+  api-key: ${LLM_API_KEY:}
+  model: gpt-4.1-mini
+  temperature: 0.2
+```
+
+启动前设置环境变量：
+
+```bash
+export LLM_API_KEY="你的密钥"
+```
 
 ## 扩展建议
 
