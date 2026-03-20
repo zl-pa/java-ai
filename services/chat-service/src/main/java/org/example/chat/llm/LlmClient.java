@@ -1,15 +1,22 @@
 package org.example.chat.llm;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+
+import org.apache.commons.logging.Log;
+import org.example.chat.ChatOrchestrator;
 import org.example.chat.config.LlmProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunctions;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 
@@ -22,6 +29,8 @@ public class LlmClient {
   private final WebClient webClient;
   private final LlmProperties properties;
   private final ObjectMapper objectMapper;
+
+  private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
 
   public LlmClient(LlmProperties properties, ObjectMapper objectMapper) {
     this.properties = properties;
@@ -36,7 +45,8 @@ public class LlmClient {
   public String chat(List<LlmMessage> messages) {
     // LLM 的 base-url 与 model 通过配置文件统一管理，便于环境切换。
     LlmChatRequest request =
-        new LlmChatRequest(properties.model(), messages, properties.temperature(), false);
+        new LlmChatRequest(properties.model(), messages, properties.temperature(), false, false);
+    outputLog(request);
     LlmChatResponse response =
         webClient
             .post()
@@ -45,6 +55,7 @@ public class LlmClient {
             .retrieve()
             .bodyToMono(LlmChatResponse.class)
             .block();
+    outputLog(response);
     if (response == null || response.choices() == null || response.choices().isEmpty()) {
       return "";
     }
@@ -54,7 +65,7 @@ public class LlmClient {
 
   public Flux<String> chatStream(List<LlmMessage> messages) {
     LlmChatRequest request =
-        new LlmChatRequest(properties.model(), messages, properties.temperature(), true);
+        new LlmChatRequest(properties.model(), messages, properties.temperature(), true, false);
 
     return webClient
         .post()
@@ -81,5 +92,12 @@ public class LlmClient {
     } catch (Exception ex) {
       return "";
     }
+  }
+
+  private void outputLog(Object o){
+      try {
+          log.info(objectMapper.writeValueAsString(o));
+      } catch (JsonProcessingException ignored) {
+      }
   }
 }

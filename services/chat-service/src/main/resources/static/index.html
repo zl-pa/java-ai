@@ -276,7 +276,7 @@
             this.messages.push(userMessage, assistantMessage);
             this.question = "";
             try {
-              const response = await fetch(`/api/chats/${this.activeChatId}/messages/stream`, {
+              const response = await fetch(`/api/chats/${this.activeChatId}/messages`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content }),

@@ -6,5 +6,6 @@ public record LlmChatRequest(
     String model,
     List<LlmMessage> messages,
     Double temperature,
-    Boolean stream
+    Boolean stream,
+    Boolean enable_thinking
 ) {}

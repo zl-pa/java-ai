@@ -45,8 +45,7 @@ public class RagAwarePromptBuilder implements PromptBuilder {
     builder.append("\n【回答要求】\n")
         .append("1. 若知识库能覆盖问题，请直接给出结论和步骤。\n")
         .append("2. 若知识库无法覆盖，请明确说明“暂时无法回答此问题，有需要请联系客服热线”，不要编造信息。\n")
-//                .append("3. 涉及规则或政策时，优先引用对应片段序号。\n")
-        .append("4. 回答的内容简洁、准确、可执行。\n");
+        .append("3. 回答的内容简洁、准确、可执行。\n");
 
     return builder.toString();
   }
