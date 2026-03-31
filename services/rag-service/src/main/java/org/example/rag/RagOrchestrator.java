@@ -1,83 +1,140 @@
 package org.example.rag;
 
+import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.example.aicommon.dto.RagChunk;
 import org.example.aicommon.dto.RagDocument;
 import org.example.aicommon.dto.RagIngestRequest;
 import org.example.aicommon.dto.RagSearchRequest;
 import org.example.aicommon.dto.RagSearchResponse;
-import org.example.rag.config.RagProperties;
+import org.example.rag.document.DocumentApplicationService;
+import org.example.rag.document.DocumentChunkEntity;
+import org.example.rag.document.DocumentChunkRepository;
+import org.example.rag.document.DocumentEntity;
+import org.example.rag.document.DocumentRepository;
 import org.example.rag.embedding.EmbeddingClient;
+import org.example.rag.ingestion.ChunkCandidate;
+import org.example.rag.ingestion.IngestionPipeline;
+import org.example.rag.ingestion.IngestionSource;
+import org.example.rag.ingestion.ParsedDocument;
+import org.example.rag.ingestion.QdrantPayloadBuilder;
 import org.example.rag.qdrant.QdrantClient;
-import org.example.rag.text.TextChunker;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RagOrchestrator {
   private final EmbeddingClient embeddingClient;
   private final QdrantClient qdrantClient;
-  private final TextChunker chunker;
+  private final IngestionPipeline ingestionPipeline;
+  private final QdrantPayloadBuilder payloadBuilder;
+  private final DocumentRepository documentRepository;
+  private final DocumentChunkRepository chunkRepository;
+  private final DocumentApplicationService documentApplicationService;
 
   public RagOrchestrator(
-      EmbeddingClient embeddingClient, QdrantClient qdrantClient, RagProperties properties) {
+      EmbeddingClient embeddingClient,
+      QdrantClient qdrantClient,
+      IngestionPipeline ingestionPipeline,
+      QdrantPayloadBuilder payloadBuilder,
+      DocumentRepository documentRepository,
+      DocumentChunkRepository chunkRepository,
+      DocumentApplicationService documentApplicationService) {
     this.embeddingClient = embeddingClient;
     this.qdrantClient = qdrantClient;
-    this.chunker = new TextChunker(properties.chunkSize(), properties.chunkOverlap());
+    this.ingestionPipeline = ingestionPipeline;
+    this.payloadBuilder = payloadBuilder;
+    this.documentRepository = documentRepository;
+    this.chunkRepository = chunkRepository;
+    this.documentApplicationService = documentApplicationService;
   }
 
-  // Build embeddings for each chunk and store them in the vector DB.
+  @Transactional
   public void ingest(RagIngestRequest request) {
+    for (RagDocument doc : request.documents()) {
+      ingestSingle(doc, true);
+    }
+  }
+
+  @Transactional
+  public void reindexDocument(String documentId) {
+    UUID id = UUID.fromString(documentId);
+    DocumentEntity existing =
+        documentRepository
+            .findById(id)
+            .orElseThrow(() -> new EntityNotFoundException("Document not found: " + id));
+    RagDocument doc =
+        new RagDocument(
+            existing.getId().toString(),
+            existing.getTitle(),
+            existing.getContent(),
+            documentApplicationService.fromJson(existing.getMetadataJson()));
+    ingestSingle(doc, true);
+  }
+
+  private void ingestSingle(RagDocument doc, boolean cleanExisting) {
+    String docId = doc.id();
+    if (cleanExisting) {
+      qdrantClient.deleteByDocumentId(docId);
+      UUID uuid = UUID.fromString(docId);
+      chunkRepository.deleteByDocument_Id(uuid);
+    }
+
+    ParsedDocument parsed =
+        ingestionPipeline.parse(new IngestionSource(doc.id(), doc.title(), doc.content(), doc.metadata()));
+    List<ChunkCandidate> chunks = ingestionPipeline.chunk(parsed);
+
     List<QdrantClient.QdrantPoint> points = new ArrayList<>();
+    List<DocumentChunkEntity> chunkEntities = new ArrayList<>();
     Integer embeddingSize = null;
     boolean collectionEnsured = false;
 
-    for (RagDocument doc : request.documents()) {
-      List<String> chunks = chunker.chunk(doc.content());
-      for (int i = 0; i < chunks.size(); i++) {
-        String chunkText = chunks.get(i);
-        List<Double> embedding = embeddingClient.embed(chunkText);
-        if (embedding.isEmpty()) {
-          continue;
-        }
-
-        if (embeddingSize == null) {
-          embeddingSize = embedding.size();
-        } else if (embeddingSize != embedding.size()) {
-          throw new IllegalStateException(
-              "Embedding dimension changed within the same ingest request: expected="
-                  + embeddingSize
-                  + ", actual="
-                  + embedding.size()
-                  + ", docId="
-                  + doc.id()
-                  + ", chunkIndex="
-                  + i);
-        }
-
-        if (!collectionEnsured) {
-          qdrantClient.ensureCollection(embeddingSize);
-          collectionEnsured = true;
-        }
-
-        String pointId = java.util.UUID.randomUUID().toString();
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("doc_id", doc.id());
-        payload.put("title", doc.title());
-        payload.put("chunk_index", i);
-        payload.put("chunk_chars", chunkText.length());
-        payload.put("text", chunkText);
-        if (doc.metadata() != null) {
-          payload.put("metadata", doc.metadata());
-        }
-        points.add(new QdrantClient.QdrantPoint(pointId, embedding, payload));
+    for (ChunkCandidate chunk : chunks) {
+      List<Double> embedding = embeddingClient.embed(chunk.text());
+      if (embedding.isEmpty()) {
+        continue;
       }
+      if (embeddingSize == null) {
+        embeddingSize = embedding.size();
+      } else if (embeddingSize != embedding.size()) {
+        throw new IllegalStateException("Embedding dimension changed within request");
+      }
+
+      if (!collectionEnsured) {
+        qdrantClient.ensureCollection(embeddingSize);
+        collectionEnsured = true;
+      }
+
+      String pointId = UUID.randomUUID().toString();
+      Map<String, Object> payload = payloadBuilder.build(parsed, chunk, pointId, doc.metadata());
+      points.add(new QdrantClient.QdrantPoint(pointId, embedding, payload));
+
+      DocumentChunkEntity chunkEntity = new DocumentChunkEntity();
+      chunkEntity.setId(UUID.randomUUID());
+      chunkEntity.setChunkIndex(chunk.chunkIndex());
+      chunkEntity.setContent(chunk.text());
+      chunkEntity.setQdrantPointId(pointId);
+      chunkEntity.setMetadataJson(documentApplicationService.toJson(chunk.metadata()));
+      chunkEntities.add(chunkEntity);
     }
+
     if (!points.isEmpty()) {
       qdrantClient.upsert(points);
     }
+
+    DocumentEntity entity = documentRepository.findById(UUID.fromString(docId)).orElseGet(DocumentEntity::new);
+    entity.setId(UUID.fromString(docId));
+    entity.setTitle(doc.title() == null ? docId : doc.title());
+    entity.setParserType(parsed.parserType());
+    entity.setContent(doc.content());
+    entity.setMetadataJson(documentApplicationService.toJson(doc.metadata()));
+    DocumentEntity saved = documentRepository.save(entity);
+
+    chunkEntities.forEach(chunkEntity -> chunkEntity.setDocument(saved));
+    chunkRepository.saveAll(chunkEntities);
   }
 
   public RagSearchResponse search(RagSearchRequest request) {
@@ -99,8 +156,9 @@ public class RagOrchestrator {
     return new RagSearchResponse(chunks);
   }
 
-  // Remove all chunks that belong to a document ID.
+  @Transactional
   public void deleteByDocumentId(String documentId) {
-    qdrantClient.deleteByDocId(documentId);
+    qdrantClient.deleteByDocumentId(documentId);
+    documentApplicationService.deleteDocumentRecord(UUID.fromString(documentId));
   }
 }
