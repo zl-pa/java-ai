@@ -110,11 +110,11 @@ public class QdrantClient {
     return response.result();
   }
 
-  public void deleteByDocId(String docId) {
+  public void deleteByDocumentId(String documentId) {
     DeleteRequest request =
         new DeleteRequest(
             new DeleteFilter(
-                List.of(new DeleteCondition("doc_id", new DeleteMatch(docId)))));
+                List.of(new DeleteCondition("documentId", new DeleteMatch(documentId)))));
     webClient
         .post()
         .uri("/collections/{name}/points/delete", properties.collection())
