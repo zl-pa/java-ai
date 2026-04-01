@@ -1,0 +1,2 @@
+ALTER TABLE document_chunk
+    MODIFY COLUMN content LONGTEXT NOT NULL;
